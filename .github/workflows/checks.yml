@@ -1,0 +1,37 @@
+name: macOS checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Show Swift version
+        run: swift --version
+      - name: Run core and media checks
+        run: ./check.sh
+      - name: Build and verify app bundle
+        run: ./build.sh
+      - name: Check the bundled exporter
+        run: '"Study Timelapse.app/Contents/MacOS/StudyTimelapse" --verify-export "$RUNNER_TEMP/study-timelapse-check.mp4"'
+      - name: Upload app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Study-Timelapse-${{ runner.arch }}
+          path: Study Timelapse.zip
+          if-no-files-found: error
+          retention-days: 14
