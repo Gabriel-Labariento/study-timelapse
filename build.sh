@@ -11,6 +11,7 @@ staged_app="$staging_dir/Study Timelapse.app"
 mkdir -p "$staged_app/Contents/MacOS" "$staged_app/Contents/Resources"
 cp "$binary_dir/StudyTimelapse" "$staged_app/Contents/MacOS/StudyTimelapse"
 cp Resources/Info.plist "$staged_app/Contents/Info.plist"
+cp LICENSE "$staged_app/Contents/Resources/LICENSE.txt"
 if [[ -f Resources/AppIcon.icns ]]; then cp Resources/AppIcon.icns "$staged_app/Contents/Resources/"; fi
 codesign --force --sign - --identifier local.studytimelapse.mac "$staged_app"
 plutil -lint "$staged_app/Contents/Info.plist"
