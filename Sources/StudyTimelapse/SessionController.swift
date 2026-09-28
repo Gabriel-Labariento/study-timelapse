@@ -15,6 +15,7 @@ import TimelapseMedia
     var onChange: (() -> Void)?
     var onPreview: ((CGImage?) -> Void)?
     var onFinish: ((Result<URL, Error>, String?) -> Void)?
+    private var previewVisible = true
     private var sources: CaptureSources?
     private var engine: RecordingEngine?
     private var setupTask: Task<Void, Never>?
@@ -46,18 +47,23 @@ import TimelapseMedia
                     self.previewReady = true; self.loading = false
                     self.elapsed = snapshot.elapsed; self.frames = snapshot.frames
                     if first { self.status = "Preview is live. Choose Start recording when you’re ready." }
-                    self.onPreview?(snapshot.image); self.onChange?()
+                    if self.previewVisible, let image = snapshot.image { self.onPreview?(image) }
+                    self.onChange?()
                 }, onError: { [weak self] message in
                     guard let self, self.generation == token else { return }
                     self.interrupt(reason: message)
                 })
-                self.engine = engine; engine.startPreview()
+                self.engine = engine; engine.setPreviewVisible(self.previewVisible); engine.startPreview()
             } catch {
                 guard let self, self.generation == token else { return }
                 self.status = error.localizedDescription
                 self.disablePreview(keepStatus: true)
             }
         }
+    }
+    func setPreviewVisible(_ visible: Bool) {
+        previewVisible = visible
+        engine?.setPreviewVisible(visible)
     }
     func update(settings: RecordingSettings) { guard !isBusy else { return }; engine?.update(settings: settings) }
     func disablePreview(keepStatus: Bool = false) {

@@ -4,14 +4,15 @@ I wanted to record study-with-me videos with my screen and my Mac's front camera
 
 It's a native macOS app written in Swift. Recordings stay on your Mac.
 
-[Download v0.1.0](https://github.com/Gabriel-Labariento/study-timelapse/releases/tag/v0.1.0) · [Report a bug](https://github.com/Gabriel-Labariento/study-timelapse/issues/new?template=bug_report.yml) · [MIT license](LICENSE)
+[Download v0.2.0](https://github.com/Gabriel-Labariento/study-timelapse/releases/tag/v0.2.0) · [Report a bug](https://github.com/Gabriel-Labariento/study-timelapse/issues/new?template=bug_report.yml) · [MIT license](LICENSE)
 
 ![Study Timelapse's setup screen, with a video preview, camera controls, speed settings, and recording buttons](docs/images/app.png)
 
 ## What it does
 
 - Records one display with a mirrored camera inset.
-- Lets you choose the inset's size and corner before recording.
+- Lets you choose the inset's size, corner, and framing before recording.
+- Shows the full camera image by default, with an optional 4:3 crop.
 - Speeds up both views at 10×, 30×, or 60×.
 - Pauses for breaks without adding that time to the video.
 - Saves a silent 1080p MP4 at 30 fps.
@@ -28,7 +29,7 @@ The screen fits inside the video without cropping. The app's own window is exclu
 
 You'll need macOS 15 or later. The downloadable build is for Apple silicon Macs.
 
-1. Download `Study-Timelapse-macOS-arm64.zip` from the [release page](https://github.com/Gabriel-Labariento/study-timelapse/releases/tag/v0.1.0).
+1. Download `Study-Timelapse-macOS-arm64.zip` from the [release page](https://github.com/Gabriel-Labariento/study-timelapse/releases/tag/v0.2.0).
 2. Unzip it and move `Study Timelapse.app` to Applications.
 3. Open the app.
 
@@ -38,7 +39,7 @@ This is an early release. Automated timing and video-export checks pass, but liv
 
 ## Record a session
 
-1. Choose your screen, camera, speed, inset size, and corner.
+1. Choose your screen, camera, speed, inset size, corner, and framing.
 2. Click **Enable preview** and allow camera and screen recording access when macOS asks.
 3. Check that both views look right, then click **Start recording…** and choose where to save the video.
 4. Use **Pause** and **Resume** when you take a break.
@@ -47,6 +48,18 @@ This is an early release. Automated timing and video-export checks pass, but liv
 Preview doesn't save anything. Finishing a recording turns capture off. While paused, the live preview stays on, but the paused time is left out of the video.
 
 If you choose an existing filename, the app asks before replacing it. It keeps the old file until the new video has finished successfully.
+
+## Camera framing
+
+**Full camera view** keeps the whole image supplied by the camera. **Crop to 4:3** uses the tighter framing from the first release. With a 16:9 camera feed, full view restores the sides that the old crop cut off.
+
+After enabling preview, **Camera controls** opens macOS's video effects controls. On supported Macs, turn off Center Stage and use the native zoom controls to widen the view. Available zoom levels depend on your camera and macOS; the app doesn't simulate a 0.5× lens. See [Apple's framing instructions](https://support.apple.com/en-us/105117#manual).
+
+## Power use
+
+The app schedules work around the next frame instead of checking 100 times a second. It draws previews at preview size and stops drawing them when the window is hidden, minimized, or fully covered. Recording continues at the chosen speed, with the same 1080p output. The camera and screen capture stay active.
+
+A synthetic benchmark showed less preview processing work on an M4 MacBook Air. Battery savings haven't been measured. See the [measurements and test method](docs/performance.md).
 
 ## Permissions and interruptions
 

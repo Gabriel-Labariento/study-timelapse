@@ -9,6 +9,7 @@ import TimelapseMedia
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("StudyTimelapseChecks-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
+        try checkFullFrameAndPreview()
         let context = CIContext()
         let screen = try makeBuffer(width: 1080, height: 1920)
         let camera = try makeBuffer(width: 640, height: 480)
@@ -80,6 +81,7 @@ import TimelapseMedia
         let untouched = try Data(contentsOf: appeared)
         precondition(untouched == sentinel)
         try await checkPausedEncoderFailure(screen: screen, camera: camera, destination: folder.appendingPathComponent("fake.mp4"))
+        try await checkHiddenPreviewKeepsRecording(screen: screen, camera: camera, destination: folder.appendingPathComponent("hidden.mp4"))
         print("PASS: engine paused-failure delivery, appearance-before-start protection, four inset positions, portrait fit, 90-frame H.264 export, duration, dimensions, silent audio, timestamps, existing-file safety, empty recording, post-finish rejection")
     }
     static func finish(_ writer: MovieWriter) async throws -> URL {

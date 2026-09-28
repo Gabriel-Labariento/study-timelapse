@@ -18,7 +18,8 @@ public final class RecordingEngine: @unchecked Sendable {
     private let compositor = Compositor()
     private var settings: RecordingSettings
     private var timer: DispatchSourceTimer?
-    private var previewBuffer: CVPixelBuffer?
+    private var previewVisible = true
+    private var lastStatus = 0.0
     private var writer: MovieWriting?
     private var clock: SamplingClock?
     private var pressure = BackpressureMonitor()
@@ -39,13 +40,30 @@ public final class RecordingEngine: @unchecked Sendable {
         queue.async { [self] in
             startTime = ProcessInfo.processInfo.systemUptime
             let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now(), repeating: .milliseconds(10), leeway: .milliseconds(2))
+            timer.schedule(deadline: .now())
             timer.setEventHandler { [weak self] in self?.tick() }
             self.timer = timer; timer.resume()
         }
     }
     public func update(settings: RecordingSettings) {
-        queue.async { [self] in if writer == nil { self.settings = settings } }
+        queue.async { [self] in
+            if writer == nil { self.settings = settings; lastPreview = 0; reschedule() }
+        }
+    }
+    public func setPreviewVisible(_ visible: Bool) {
+        queue.async { [self] in
+            guard previewVisible != visible else { return }
+            previewVisible = visible
+            if visible { lastPreview = 0 }
+            reschedule()
+        }
+    }
+    private func reschedule(warmingUp: Bool = false) {
+        guard let timer, !failed, !finishing else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let delay = warmingUp ? 0.1 : RecordingSchedule.delay(now: now, sample: clock?.nextDeadline,
+            preview: previewVisible ? lastPreview + 0.1 : nil, status: lastStatus + 1)
+        timer.schedule(deadline: .now() + delay, leeway: .milliseconds(2))
     }
     public func startRecording(destination: URL, replaceExisting: Bool, completion: @escaping (Result<Void, Error>) -> Void) {
         queue.async { [self] in
@@ -56,7 +74,7 @@ public final class RecordingEngine: @unchecked Sendable {
                 writer = try writerFactory(destination, replaceExisting)
                 var clock = SamplingClock(speed: settings.speed)
                 clock.start(at: ProcessInfo.processInfo.systemUptime)
-                self.clock = clock
+                self.clock = clock; lastStatus = 0; reschedule()
                 DispatchQueue.main.async { completion(.success(())) }
             } catch { DispatchQueue.main.async { completion(.failure(error)) } }
         }
@@ -64,10 +82,11 @@ public final class RecordingEngine: @unchecked Sendable {
     public func pause(completion: @escaping () -> Void = {}) {
         queue.async { [self] in
             clock?.pause(at: ProcessInfo.processInfo.systemUptime)
+            lastStatus = 0; reschedule()
             DispatchQueue.main.async(execute: completion)
         }
     }
-    public func resume() { queue.async { [self] in pressure = BackpressureMonitor(); clock?.resume(at: ProcessInfo.processInfo.systemUptime) } }
+    public func resume() { queue.async { [self] in pressure = BackpressureMonitor(); clock?.resume(at: ProcessInfo.processInfo.systemUptime); lastStatus = 0; reschedule() } }
     public func finish(completion: @escaping (Result<URL, Error>) -> Void) {
         queue.async { [self] in
             guard !finishing else { return }
@@ -83,15 +102,18 @@ public final class RecordingEngine: @unchecked Sendable {
         queue.async { [self] in
             timer?.cancel(); timer = nil
             if !finishing { writer?.cancel() }
-            writer = nil; clock = nil; previewBuffer = nil
+            writer = nil; clock = nil
         }
     }
     private func tick() {
         autoreleasepool {
             guard !failed, !finishing else { return }
+            var warmingUp = false
+            defer { reschedule(warmingUp: warmingUp) }
             if let failure = writer?.failure { fail(failure.localizedDescription); return }
             let now = ProcessInfo.processInfo.systemUptime
             guard let (screen, camera) = sources.latestPair(now: now) else {
+                warmingUp = true
                 if hadPair || now-startTime > 10 { fail("Live frames stopped arriving. Check the camera and screen permissions, then enable preview again.") }
                 return
             }
@@ -113,21 +135,24 @@ public final class RecordingEngine: @unchecked Sendable {
                         _ = clock?.takeSampleIfDue(at: now)
                     }
                 }
-                guard now-lastPreview >= 0.1 else { return }
-                lastPreview = now
-                guard delivery.wait(timeout: .now()) == .success else { return }
-                do {
-                    let buffer: CVPixelBuffer
-                    if let movieBuffer { buffer = movieBuffer }
-                    else {
-                        if previewBuffer == nil { previewBuffer = try Compositor.makeBuffer() }
-                        buffer = previewBuffer!
-                        try compositor.render(screen: screen, camera: camera, settings: settings, into: buffer)
-                    }
-                    let snapshot = EngineSnapshot(elapsed: clock?.activeElapsed(at: now) ?? 0,
-                        frames: writer?.frameCount ?? 0, image: compositor.preview(from: buffer))
-                    DispatchQueue.main.async { [self] in onSnapshot(snapshot); delivery.signal() }
-                } catch { delivery.signal(); throw error }
+                let drawPreview = previewVisible && now-lastPreview >= 0.1
+                guard drawPreview || now-lastStatus >= 1 else { return }
+                // Keep at most one queued main-thread delivery, including when the window is occluded.
+                guard delivery.wait(timeout: .now()) == .success else {
+                    lastStatus = now
+                    if drawPreview { lastPreview = now }
+                    return
+                }
+                var image: CGImage?
+                if drawPreview {
+                    lastPreview = now
+                    if let movieBuffer { image = compositor.preview(from: movieBuffer) }
+                    else { image = compositor.preview(screen: screen, camera: camera, settings: settings) }
+                }
+                lastStatus = now
+                let snapshot = EngineSnapshot(elapsed: clock?.activeElapsed(at: now) ?? 0,
+                    frames: writer?.frameCount ?? 0, image: image)
+                DispatchQueue.main.async { [self] in onSnapshot(snapshot); delivery.signal() }
             } catch { fail(error.localizedDescription) }
         }
     }

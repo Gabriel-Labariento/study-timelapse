@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import UniformTypeIdentifiers
 import TimelapseCore
 import TimelapseMedia
@@ -11,6 +12,8 @@ import TimelapseMedia
     private let speedMenu = NSPopUpButton()
     private let sizeMenu = NSPopUpButton()
     private let cornerMenu = NSPopUpButton()
+    private let framingMenu = NSPopUpButton()
+    private let cameraControlsButton = NSButton(title: "Camera controls…", target: nil, action: nil)
     private var displays: [DisplayChoice] = []
     private var cameras: [CameraChoice] = []
     private let preview = PreviewView()
@@ -61,6 +64,7 @@ import TimelapseMedia
             }
         })
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        updatePreviewVisibility()
         if CommandLine.arguments.contains("--ui-check") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.saveUICheck() }
         }
@@ -117,13 +121,18 @@ import TimelapseMedia
         speedMenu.addItems(withTitles: ["10× · gently sped up", "30× · study session", "60× · a quick recap"]); speedMenu.selectItem(at: 1)
         sizeMenu.addItems(withTitles: ["Small", "Medium", "Large"]); sizeMenu.selectItem(at: 1)
         cornerMenu.addItems(withTitles: InsetCorner.allCases.map(\.rawValue)); cornerMenu.selectItem(at: 3)
+        framingMenu.addItems(withTitles: CameraFraming.allCases.map(\.rawValue))
         for control in [displayMenu, cameraMenu] { control.target = self; control.action = #selector(sourceChanged) }
-        for control in [speedMenu, sizeMenu, cornerMenu] { control.target = self; control.action = #selector(settingsChanged) }
+        for control in [speedMenu, sizeMenu, cornerMenu, framingMenu] { control.target = self; control.action = #selector(settingsChanged) }
         speedHint.font = .systemFont(ofSize: 12); speedHint.textColor = .secondaryLabelColor
         refreshButton.target = self; refreshButton.action = #selector(refreshDevices)
         refreshButton.bezelStyle = .inline; refreshButton.font = .systemFont(ofSize: 11)
-        let sidebarFields = [field("SCREEN", displayMenu), field("CAMERA", cameraMenu), field("TIMELAPSE SPEED", speedMenu), field("CAMERA SIZE", sizeMenu), field("CAMERA POSITION", cornerMenu)]
-        let sidebar = stack(sidebarFields + [speedHint, refreshButton], vertical: true, spacing: 13)
+        let sidebarFields = [field("SCREEN", displayMenu), field("CAMERA", cameraMenu), field("TIMELAPSE SPEED", speedMenu), field("CAMERA SIZE", sizeMenu), field("CAMERA POSITION", cornerMenu), field("CAMERA FRAMING", framingMenu)]
+        cameraControlsButton.target = self; cameraControlsButton.action = #selector(openCameraControls)
+        cameraControlsButton.bezelStyle = .inline; cameraControlsButton.font = .systemFont(ofSize: 11)
+        cameraControlsButton.toolTip = "Open macOS video controls. Turn Center Stage off, then adjust zoom if your camera supports it."
+        let deviceActions = stack([refreshButton, cameraControlsButton], vertical: false, spacing: 12)
+        let sidebar = stack(sidebarFields + [speedHint, deviceActions], vertical: true, spacing: 9)
         sidebar.widthAnchor.constraint(equalToConstant: 258).isActive = true
         for view in sidebarFields + [speedHint] { view.widthAnchor.constraint(equalTo: sidebar.widthAnchor).isActive = true }
         let body = stack([left, sidebar], vertical: false, spacing: 28); body.alignment = .top
@@ -169,7 +178,8 @@ import TimelapseMedia
     private var settings: RecordingSettings {
         RecordingSettings(speed: [10, 30, 60][max(0, speedMenu.indexOfSelectedItem)],
             corner: InsetCorner.allCases[max(0, cornerMenu.indexOfSelectedItem)],
-            insetFraction: [0.20, 0.28, 0.36][max(0, sizeMenu.indexOfSelectedItem)])
+            insetFraction: [0.20, 0.28, 0.36][max(0, sizeMenu.indexOfSelectedItem)],
+            cameraFraming: CameraFraming.allCases[max(0, framingMenu.indexOfSelectedItem)])
     }
     @objc private func sourceChanged() { controller.disablePreview() }
     @objc private func settingsChanged() {
@@ -217,13 +227,24 @@ import TimelapseMedia
     @objc private func pauseRecording() { controller.pauseOrResume() }
     @objc private func finishRecording() { controller.finish() }
     @objc private func revealMovie() { if let url = controller.savedURL { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+    @objc private func openCameraControls() { AVCaptureDevice.showSystemUserInterface(.videoEffects) }
+    private func updatePreviewVisibility() {
+        guard window != nil else { return }
+        controller.setPreviewVisible(window.occlusionState.contains(.visible) && !window.isMiniaturized && !NSApp.isHidden)
+    }
+    func windowDidChangeOcclusionState(_ notification: Notification) { updatePreviewVisibility() }
+    func windowDidMiniaturize(_ notification: Notification) { updatePreviewVisibility() }
+    func windowDidDeminiaturize(_ notification: Notification) { updatePreviewVisibility() }
+    func applicationDidHide(_ notification: Notification) { updatePreviewVisibility() }
+    func applicationDidUnhide(_ notification: Notification) { updatePreviewVisibility() }
     @objc private func openPermissions() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
     }
     private func render() {
         let available = !controller.isBusy && !controller.loading && !controller.stopping
-        for control in [displayMenu, cameraMenu, speedMenu, sizeMenu, cornerMenu] { control.isEnabled = available }
+        for control in [displayMenu, cameraMenu, speedMenu, sizeMenu, cornerMenu, framingMenu] { control.isEnabled = available }
         refreshButton.isEnabled = available
+        cameraControlsButton.isEnabled = controller.previewReady && available
         previewButton.isEnabled = available && !displays.isEmpty && !cameras.isEmpty
         previewButton.title = controller.loading ? "Opening preview…" : controller.stopping ? "Closing preview…" : controller.previewReady ? "Turn preview off" : "Enable preview"
         startButton.isEnabled = controller.previewReady && available

@@ -24,6 +24,7 @@ public struct SamplingClock {
     public func activeElapsed(at now: Double) -> Double {
         accumulated + (segmentStart.map { max(0, now - $0) } ?? 0)
     }
+    public var nextDeadline: Double? { segmentStart == nil ? nil : nextSample }
     public func isDue(at now: Double) -> Bool { segmentStart != nil && now + 1e-8 >= nextSample }
     public mutating func takeSampleIfDue(at now: Double) -> Int64? {
         guard isDue(at: now) else { return nil }
@@ -50,5 +51,13 @@ public struct BackpressureMonitor {
         if ready { since = nil; return false }
         if since == nil { since = now }
         return now - since! >= 2
+    }
+}
+
+/// The earliest useful deadline wins. Health checks continue even with a hidden, paused preview.
+public enum RecordingSchedule {
+    public static func delay(now: Double, sample: Double?, preview: Double?, status: Double) -> Double {
+        let deadline = [sample, preview, status, now + 0.25].compactMap { $0 }.min()!
+        return max(0.01, deadline - now)
     }
 }

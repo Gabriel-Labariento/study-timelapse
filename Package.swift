@@ -8,6 +8,7 @@ let package = Package(
         .target(name: "TimelapseCore"),
         .target(name: "TimelapseMedia", dependencies: ["TimelapseCore"]),
         .executableTarget(name: "StudyTimelapse", dependencies: ["TimelapseCore", "TimelapseMedia"]),
+        .executableTarget(name: "PreviewBenchmark", dependencies: ["TimelapseCore", "TimelapseMedia"], path: "Tests/PreviewBenchmark"),
         .executableTarget(name: "CoreChecks", dependencies: ["TimelapseCore"], path: "Tests/TimelapseCoreTests"),
         .executableTarget(name: "MediaChecks", dependencies: ["TimelapseCore", "TimelapseMedia"], path: "Tests/TimelapseMediaTests")
     ],

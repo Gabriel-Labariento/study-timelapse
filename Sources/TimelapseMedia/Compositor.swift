@@ -17,18 +17,22 @@ public final class Compositor {
             throw RecordingError("The output frame must be 1920 × 1080.")
         }
         let canvas = CGRect(origin: .zero, size: CompositionLayout.canvas)
+        context.render(composition(screen: screen, camera: camera, settings: settings), to: buffer, bounds: canvas, colorSpace: colorSpace)
+    }
+    private func composition(screen: CVPixelBuffer, camera: CVPixelBuffer, settings: RecordingSettings) -> CIImage {
+        let canvas = CGRect(origin: .zero, size: CompositionLayout.canvas)
         let screenImage = CIImage(cvPixelBuffer: screen)
         let screenRect = CompositionLayout.screenRect(source: screenImage.extent.size, canvas: canvas.size)
         let fitted = transform(screenImage, to: screenRect, fill: false)
-        let inset = CompositionLayout.cameraRect(canvas: canvas.size, fraction: settings.insetFraction, corner: settings.corner)
         // Mirror the front-camera view, as in a familiar webcam preview.
         let originalCamera = CIImage(cvPixelBuffer: camera)
+        let aspect = settings.cameraFraming == .fullFrame ? originalCamera.extent.width / originalCamera.extent.height : 4/3
+        let inset = CompositionLayout.cameraRect(canvas: canvas.size, fraction: settings.insetFraction, corner: settings.corner, cameraAspectRatio: aspect)
         let mirrored = originalCamera.transformed(by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: originalCamera.extent.width, ty: 0))
         let cropped = transform(mirrored, to: inset, fill: true)
         let base = CIImage(color: .black).cropped(to: canvas)
         let border = CIImage(color: CIColor(red: 0.92, green: 0.94, blue: 0.90)).cropped(to: inset.insetBy(dx: -3, dy: -3))
-        let composed = cropped.composited(over: border.composited(over: fitted.composited(over: base)))
-        context.render(composed, to: buffer, bounds: canvas, colorSpace: colorSpace)
+        return cropped.composited(over: border.composited(over: fitted.composited(over: base)))
     }
     private func transform(_ image: CIImage, to rect: CGRect, fill: Bool) -> CIImage {
         let sx = rect.width / image.extent.width, sy = rect.height / image.extent.height
@@ -37,6 +41,12 @@ public final class Compositor {
         let scaled = normalized.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         let moved = scaled.transformed(by: CGAffineTransform(translationX: rect.midX-scaled.extent.midX, y: rect.midY-scaled.extent.midY))
         return moved.cropped(to: rect)
+    }
+    /// Evaluate the same image graph directly at preview resolution, without a full-HD intermediate.
+    public func preview(screen: CVPixelBuffer, camera: CVPixelBuffer, settings: RecordingSettings) -> CGImage? {
+        let image = composition(screen: screen, camera: camera, settings: settings)
+            .transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
+        return context.createCGImage(image, from: CGRect(x: 0, y: 0, width: 960, height: 540))
     }
     public func preview(from buffer: CVPixelBuffer) -> CGImage? {
         let image = CIImage(cvPixelBuffer: buffer).transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))

@@ -100,6 +100,32 @@ final class CoreTests {
         XCTAssertEqual(DestinationPolicy.saveDecision(existsNow: true, confirmation: false), .cancel)
         XCTAssertEqual(DestinationPolicy.saveDecision(existsNow: true, confirmation: true), .start(replaceExisting: true))
     }
+    func testDeadlineSchedulingAndPausedClock() {
+        XCTAssertEqual(RecordingSchedule.delay(now: 10, sample: 10.033, preview: 10.1, status: 11), 0.033, accuracy: 0.0001)
+        XCTAssertEqual(RecordingSchedule.delay(now: 10, sample: 11, preview: nil, status: 11), 0.25)
+        XCTAssertEqual(RecordingSchedule.delay(now: 10, sample: nil, preview: 10.1, status: 11), 0.1, accuracy: 0.0001)
+        XCTAssertEqual(RecordingSchedule.delay(now: 10, sample: 9, preview: nil, status: 11), 0.01)
+        var clock = SamplingClock(speed: 30)
+        clock.start(at: 10)
+        XCTAssertEqual(clock.nextDeadline, 10)
+        _ = clock.takeSampleIfDue(at: 10)
+        XCTAssertEqual(clock.nextDeadline, 11)
+        clock.pause(at: 10.5)
+        XCTAssertNil(clock.nextDeadline)
+        clock.resume(at: 20)
+        XCTAssertEqual(clock.nextDeadline, 21)
+    }
+    func testFullFrameGeometryPreservesAspectRatio() {
+        for corner in InsetCorner.allCases {
+            let wide = CompositionLayout.cameraRect(canvas: CGSize(width: 1920, height: 1080), fraction: 0.28, corner: corner, cameraAspectRatio: 16/9)
+            XCTAssertEqual(wide.width / wide.height, 16/9, accuracy: 0.0001)
+            let portrait = CompositionLayout.cameraRect(canvas: CGSize(width: 1920, height: 1080), fraction: 0.36, corner: corner, cameraAspectRatio: 9/16)
+            XCTAssertLessThanOrEqual(portrait.maxY, 1056)
+            XCTAssertGreaterThanOrEqual(portrait.minY, 24)
+            XCTAssertEqual(portrait.width / portrait.height, 9/16, accuracy: 0.0001)
+        }
+        XCTAssertEqual(RecordingSettings().cameraFraming, .fullFrame)
+    }
     func testBackpressureTimeoutAndReset() {
         var pressure = BackpressureMonitor()
         XCTAssertFalse(pressure.shouldStop(ready: false, now: 10))
@@ -122,4 +148,6 @@ tests.testInterruptionFromPreparingRecordingOrPaused()
 tests.testDestinationNeverSilentlyReplacesNewFile()
 tests.testBackpressureTimeoutAndReset()
 tests.testSaveRequiresExplicitReplacementConsent()
-print("PASS: 11 core checks")
+tests.testDeadlineSchedulingAndPausedClock()
+tests.testFullFrameGeometryPreservesAspectRatio()
+print("PASS: 13 core checks")
